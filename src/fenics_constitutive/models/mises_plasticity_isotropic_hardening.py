@@ -52,7 +52,7 @@ class VonMises3D(IncrSmallStrainModel):
         self.I4 = np.eye(
             self.stress_strain_dim, dtype=np.float64
         )  # Identity of rank 4 tensor
-        self.xpp = self.I4 - (1 / 3) * self.xioi  # Projection tensor of rank 4
+        self.xpp = self.I4 - (1. / 3.) * self.xioi  # Projection tensor of rank 4
 
         self.p_ka = param["p_ka"]  # kappa - bulk modulus
         self.p_mu = param["p_mu"]  # mu - shear modulus
@@ -84,14 +84,14 @@ class VonMises3D(IncrSmallStrainModel):
             # deviatoric trial internal forces (trial stress)
             del_sigtr = 2 * self.p_mu * eps_dev  # incremental trial stress
             stress_n_dev = (
-                stress_view[n] - np.sum(stress_view[n][:3]) * self.I2 / 3
+                stress_view[n] - np.sum(stress_view[n][:3]) * self.I2 / 3.
             )  # total deviatoric stress in last time step
             sigtr = (
                 stress_n_dev + del_sigtr
             )  # total (deviatoric) trial stress in current time step
 
             # norm of deviatoric trial internal forces
-            sigtrn = np.sqrt(np.dot(sigtr, sigtr))
+            sigtrn = np.sqrt(np.dot(sigtr.astype(float), sigtr.astype(float)))
 
             # trial yield criterion
             phitr = sigtrn - np.sqrt(2 / 3) * (
@@ -101,46 +101,50 @@ class VonMises3D(IncrSmallStrainModel):
 
             # CHECK YIELD CRITERION
             # elastic - plastic step
-            if phitr > 0:
+            if phitr > 0.:
                 # initialization
-                gamma_0 = 1
-                gamma_1 = 0
-                xr = 1
+                gamma_0 = 1.
+                gamma_1 = 0.
+                xr = 1.
                 it = 0
-                tol = 1e-12
-                tol_rel = 1e-8
+                tol = 1.e-12
+                tol_rel = 1.e-8
                 nmax = 100
                 # flow direction
                 xn = sigtr / sigtrn
 
                 # UPDATE PLASTIC MULTIPLIER VIA NEWTON-RAPHSON SCHEME
                 def f(x):
+                    x = float(x) if hasattr(x, '__float__') else x
                     return (
                         sigtrn
-                        - 2 * self.p_mu * x
-                        - np.sqrt(2 / 3)
+                        - 2. * self.p_mu * x
+                        - np.sqrt(2. / 3.)
                         * (
                             self.p_y0
                             + (self.p_y00 - self.p_y0)
-                            * (1 - np.exp(-self.p_w * (alpha[n] + np.sqrt(2 / 3) * x)))
+                            * (1. - np.exp(-self.p_w * (alpha[n] + np.sqrt(2. / 3.) * x)))
                         )
                     )
 
                 def df(x):
-                    return -2 * self.p_mu - (2 / 3) * (
+                    x = float(x) if hasattr(x, '__float__') else x
+                    return -2. * self.p_mu - (2. / 3.) * (
                         self.p_y00 - self.p_y0
-                    ) * self.p_w * np.exp(-self.p_w * (alpha[n] + np.sqrt(2 / 3) * x))
+                    ) * self.p_w * np.exp(-self.p_w * (alpha[n] + np.sqrt(2. / 3.) * x))
 
                 # start Newton iteration
-                while np.abs(xr) > tol and abs(gamma_1 - gamma_0) > tol_rel * abs(
-                    gamma_1
+                while np.abs(float(xr)) > tol and abs(float(gamma_1) - float(gamma_0)) > tol_rel * abs(
+                    float(gamma_1)
                 ):
-                    gamma_0 = gamma_1
+                    gamma_0 = float(gamma_1)
                     it = it + 1
                     # compute residium
                     xr = f(gamma_0)
+                    xr = float(xr)
                     # compute tangent
                     xg = df(gamma_0)
+                    xg = float(xg) 
                     # update plastic flow
                     gamma_1 = gamma_0 - xr / xg
                     # exit Newton algorithm for iteration > nmax
@@ -152,32 +156,33 @@ class VonMises3D(IncrSmallStrainModel):
 
                 # compute tangent with converged gamma
                 xg = df(gamma_1)
-
+                xg = float(xg) 
                 # algorithmic parameters
-                xc1 = -1 / xg
+                xc1 = -1. / xg
                 xc2 = gamma_1 / sigtrn
+                xg = float(xg)
 
                 # ELASTIC STEP
             else:
                 xn = np.zeros(6)
-                gamma_1 = 0
-                xc1 = 0
-                xc2 = 0
+                gamma_1 = 0.
+                xc1 = 0.
+                xc2 = 0.
 
             # update eps^p_n+1 and alpha
-            eps_n[n] += gamma_1 * xn
-            alpha[n] += np.sqrt(2 / 3) * gamma_1
+            eps_n[n] += gamma_1 * xn.astype(float)
+            alpha[n] += np.sqrt(2. / 3.) * gamma_1
 
             # determine incremental elastic-plastic stresses (with volumetric part)
-            sh = self.p_ka * tr_eps * self.I2 + del_sigtr - 2 * self.p_mu * gamma_1 * xn
+            sh = self.p_ka * tr_eps * self.I2 + del_sigtr - 2. * self.p_mu * gamma_1 * xn
             # update total stresses
-            stress_view[n] += sh
+            stress_view[n] += sh.astype(float)
 
             # determine elastic-plastic moduli
             aah = (
                 self.p_ka * self.xioi
-                + 2 * self.p_mu * (1 - 2 * self.p_mu * xc2) * self.xpp
-                + 4 * self.p_mu * self.p_mu * (xc2 - xc1) * np.outer(xn, xn)
+                + 2. * self.p_mu * (1. - 2. * self.p_mu * xc2) * self.xpp
+                + 4. * self.p_mu * self.p_mu * (xc2 - xc1) * np.outer(xn, xn)
             )
             tangent_view[n] = aah.flatten()
 
