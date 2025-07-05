@@ -142,7 +142,7 @@ class IncrSmallStrainProblem(NonlinearProblem):
             Q_grad_u_subspace = df.fem.functionspace(submesh, Q_grad_u_e)
             self._del_grad_u.append(df.fem.Function(Q_grad_u_subspace))
 
-            # subspace for tanget
+            # subspace for tangent
             QT_subspace = df.fem.functionspace(submesh, QTe)
             self._tangent.append(df.fem.Function(QT_subspace))
 
@@ -210,7 +210,7 @@ class IncrSmallStrainProblem(NonlinearProblem):
 
     @df.common.timed("constitutive-form-evaluation")
     def form(self, x: PETSc.Vec) -> None:
-        """This function is called before the residual or Jacobian is
+        """ This function is called before the residual or Jacobian is
         computed. This is usually used to update ghost values, but here
         we use it to update the stress, tangent and history.
 
@@ -289,8 +289,46 @@ class IncrSmallStrainProblem(NonlinearProblem):
             # law.update()
             if law.history_dim is not None:
                 for key in law.history_dim:
+                    print(f'key in law.history_dim: {key}')
                     self._history_0[k][key].x.array[:] = self._history_1[k][key].x.array
                     self._history_0[k][key].x.scatter_forward()
 
         # time update
         self._time += self._del_t
+    
+
+    def compute_internal_forces(self):
+        """
+        author: Rui Barreira Morais Pinto, rbarreira@ethz.ch
+        
+        TODO: validate!
+
+        Compute the internal forces acting on the degrees of freedom from 
+        the computed stress at the integration points.
+        
+        Returns:
+            A PETSc vector containing the internal forces at each DOF.
+        """
+        # Create test function for the force computation
+        v = ufl.TestFunction(self._u.function_space)
+        
+        # The internal force form
+        force_form = ufl.inner(ufl_mandel_strain(
+            v, self.laws[0][0].constraint), self.stress_1) * self.dxm
+        
+        # Compile the form
+        compiled_form = df.fem.form(
+            force_form,
+            form_compiler_options=self._form_compiler_options if \
+                self._form_compiler_options is not None else {},
+            jit_options=self._jit_options if self._jit_options is not None \
+                else {})
+
+        # Create internal force vector
+        f_int_vec = df.fem.petsc.create_vector(compiled_form)
+        # Assemble the internal force vector
+        f_int_vec = df.fem.petsc.assemble_vector(compiled_form)
+        f_int_vec.ghostUpdate(addv=PETSc.InsertMode.ADD,
+                                 mode=PETSc.ScatterMode.REVERSE)
+        
+        return f_int_vec
